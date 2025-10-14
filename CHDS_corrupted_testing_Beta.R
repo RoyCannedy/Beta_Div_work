@@ -1,11 +1,14 @@
-
 library(bnlearn)
 set.seed(42)
 
+# --- Paths that make sense together ---
+base_dir      <- "Desktop/betadiv_roy/"
+chds_path     <- file.path(base_dir, "CHDS.latentexample1.csv")
+corrupted_dir <- file.path(base_dir, "CHDS_corrupted")  # where CHDS_corrupted_XXperc.csv live
 
-chds_path <- "Desktop/betaDiv/CHDS.latentexample1.csv"   
+chds_orig <- read.csv(chds_path, stringsAsFactors = TRUE)
 
-#  beta_div_score 
+#=beta_div_score
 beta_div_score <- function(node, parents, data, beta = 0, alpha = 1.0, ...) {
   stopifnot(is.character(node), length(node) == 1, node %in% names(data))
   if (!is.factor(data[[node]])) data[[node]] <- factor(data[[node]])
@@ -16,7 +19,6 @@ beta_div_score <- function(node, parents, data, beta = 0, alpha = 1.0, ...) {
     lgamma(A) - lgamma(A + N) + sum(lgamma(alpha_vec + counts) - lgamma(alpha_vec))
   }
   
-  # beta = 0 -> log-marginal likelihood
   if (isTRUE(all.equal(beta, 0))) {
     if (length(parents) == 0) {
       lev <- levels(data[[node]]); K <- length(lev)
@@ -42,7 +44,6 @@ beta_div_score <- function(node, parents, data, beta = 0, alpha = 1.0, ...) {
     }
   }
   
-  # beta != 0 -> beta-divergence using posterior predictive p_hat
   if (length(parents) == 0) {
     lev <- levels(data[[node]]); K <- length(lev)
     tab <- table(data[[node]])
@@ -64,121 +65,37 @@ beta_div_score <- function(node, parents, data, beta = 0, alpha = 1.0, ...) {
   }
 }
 
-# ---- Your wrapper factory ----
+# ---- Wrapper factory ----
 make_beta_wrapper <- function(beta, alpha = 1) {
   function(node, parents, data, args) {
     beta_div_score(node, parents, data, beta = beta, alpha = alpha)
   }
 }
 
-
-# beta = 0.0
-wrapper0 <- make_beta_wrapper(beta = 0.0, alpha = 1)
-net0 <- hc(chds_orig, score = "custom-score", fun = wrapper0)
-plot(net0, main = "beta = 0.0")
-
-# beta = 0.1
+wrapper0  <- make_beta_wrapper(beta = 0.0, alpha = 1)
 wrapper01 <- make_beta_wrapper(beta = 0.1, alpha = 1)
+net0  <- hc(chds_orig, score = "custom-score", fun = wrapper0)
+plot(net0,  main = "ORIGINAL | beta = 0.0")
 net01 <- hc(chds_orig, score = "custom-score", fun = wrapper01)
-plot(net01, main = "beta = 0.1")
+plot(net01, main = "ORIGINAL | beta = 0.1")
 
-# beta = 0.2
-wrapper02 <- make_beta_wrapper(beta = 0.2, alpha = 1)
-net02 <- hc(chds_orig, score = "custom-score", fun = wrapper02)
-plot(net02, main = "beta = 0.2")
+corrupted_dir <- "CHDS_corrupted" 
 
-# beta = 0.3
-wrapper03 <- make_beta_wrapper(beta = 0.3, alpha = 1)
-net03 <- hc(chds_orig, score = "custom-score", fun = wrapper03)
-plot(net03, main = "beta = 0.3")
-
-# beta = 0.4
-wrapper04 <- make_beta_wrapper(beta = 0.4, alpha = 1)
-net04 <- hc(chds_orig, score = "custom-score", fun = wrapper04)
-plot(net04, main = "beta = 0.4")
-
-# beta = 0.5
-wrapper05 <- make_beta_wrapper(beta = 0.5, alpha = 1)
-net05 <- hc(chds_orig, score = "custom-score", fun = wrapper05)
-plot(net05, main = "beta = 0.5")
-
-# beta = 0.6
-wrapper06 <- make_beta_wrapper(beta = 0.6, alpha = 1)
-net06 <- hc(chds_orig, score = "custom-score", fun = wrapper06)
-plot(net06, main = "beta = 0.6")
-
-# beta = 0.7
-wrapper07 <- make_beta_wrapper(beta = 0.7, alpha = 1)
-net07 <- hc(chds_orig, score = "custom-score", fun = wrapper07)
-plot(net07, main = "beta = 0.7")
-
-# beta = 0.8
-wrapper08 <- make_beta_wrapper(beta = 0.8, alpha = 1)
-net08 <- hc(chds_orig, score = "custom-score", fun = wrapper08)
-plot(net08, main = "beta = 0.8")
-
-# beta = 0.9
-wrapper09 <- make_beta_wrapper(beta = 0.9, alpha = 1)
-net09 <- hc(chds_orig, score = "custom-score", fun = wrapper09)
-plot(net09, main = "beta = 0.9")
-
-library(bnlearn)
-
-# --- Load the 90% corrupted dataset ---
-chds_90_path <- "Desktop/betadiv_roy//CHDS_corrupted_boosted.csv"
-chds_corrupted <- read.csv(chds_90_path, stringsAsFactors = TRUE)
-
-# --- Run hc() individually for beta = 0.0 → 0.9 ---
-
-# beta = 0.0
-wrapper0 <- make_beta_wrapper(beta = 0.0, alpha = 1)
-net0c <- hc(chds_corrupted, score = "custom-score", fun = wrapper0)
-plot(net0c, main = "CHDS 90% corrupted | beta = 0.0")
-
-# beta = 0.1
+wrapper0  <- make_beta_wrapper(beta = 0.0, alpha = 1)
 wrapper01 <- make_beta_wrapper(beta = 0.1, alpha = 1)
-net01c <- hc(chds_corrupted, score = "custom-score", fun = wrapper01)
-plot(net01c, main = "CHDS 90% corrupted | beta = 0.1")
 
-# beta = 0.2
-wrapper02 <- make_beta_wrapper(beta = 0.2, alpha = 1)
-net02c <- hc(chds_corrupted, score = "custom-score", fun = wrapper02)
-plot(net02c, main = "CHDS 90% corrupted | beta = 0.2")
-
-# beta = 0.3
-wrapper03 <- make_beta_wrapper(beta = 0.3, alpha = 1)
-net03c <- hc(chds_corrupted, score = "custom-score", fun = wrapper03)
-plot(net03c, main = "CHDS 90% corrupted | beta = 0.3")
-
-# beta = 0.4
-wrapper04 <- make_beta_wrapper(beta = 0.4, alpha = 1)
-net04c <- hc(chds_corrupted, score = "custom-score", fun = wrapper04)
-plot(net04c, main = "CHDS 90% corrupted | beta = 0.4")
-
-# beta = 0.5
-wrapper05 <- make_beta_wrapper(beta = 0.5, alpha = 1)
-net05c <- hc(chds_corrupted, score = "custom-score", fun = wrapper05)
-plot(net05c, main = "CHDS 90% corrupted | beta = 0.5")
-
-# beta = 0.6
-wrapper06 <- make_beta_wrapper(beta = 0.6, alpha = 1)
-net06c <- hc(chds_corrupted, score = "custom-score", fun = wrapper06)
-plot(net06c, main = "CHDS 90% corrupted | beta = 0.6")
-
-# beta = 0.7
-wrapper07 <- make_beta_wrapper(beta = 0.7, alpha = 1)
-net07c <- hc(chds_corrupted, score = "custom-score", fun = wrapper07)
-plot(net07c, main = "CHDS 90% corrupted | beta = 0.7")
-
-# beta = 0.8
-wrapper08 <- make_beta_wrapper(beta = 0.8, alpha = 1)
-net08c <- hc(chds_corrupted, score = "custom-score", fun = wrapper08)
-plot(net08c, main = "CHDS 90% corrupted | beta = 0.8")
-
-# beta = 0.9
-wrapper09 <- make_beta_wrapper(beta = 0.9, alpha = 1)
-net09c <- hc(chds_corrupted, score = "custom-score", fun = wrapper09)
-plot(net09c, main = "CHDS 90% corrupted | beta = 0.9")
+for (p in seq(0, 100, by = 10)) {
+  chds_corrupted_path <- file.path(corrupted_dir, sprintf("CHDS_corrupted_%dperc.csv", p))
+  chds_corrupted <- read.csv(chds_corrupted_path, stringsAsFactors = TRUE)
+  
+  # beta = 0.0
+  net0c <- hc(chds_corrupted, score = "custom-score", fun = wrapper0)
+  plot(net0c,  main = sprintf("CHDS %d%% corrupted | beta = 0.0", p))
+  
+  # beta = 0.1
+  net01c <- hc(chds_corrupted, score = "custom-score", fun = wrapper01)
+  plot(net01c, main = sprintf("CHDS %d%% corrupted | beta = 0.1", p))
+}
 
 
 
