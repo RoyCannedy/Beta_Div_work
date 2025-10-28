@@ -1,7 +1,6 @@
 library(bnlearn)
 set.seed(42)
 
-# ---------- 1) Your beta_div_score (unchanged) ----------
 beta_div_score <- function(node, parents, data, beta = 0, alpha = 1.0, ...) {
   stopifnot(is.character(node), length(node) == 1, node %in% names(data))
   if (!is.factor(data[[node]])) data[[node]] <- factor(data[[node]])
@@ -64,8 +63,6 @@ make_beta_wrapper <- function(beta, alpha = 1) {
   }
 }
 
-# ---------- 2) Get a CANCER dataset ----------
-# Try to sample from a fitted bn if available; else synthesize data with classic CPTs.
 get_cancer_data <- function(n = 5000) {
   have_fit <- FALSE
   suppressWarnings({
@@ -82,14 +79,10 @@ get_cancer_data <- function(n = 5000) {
     }
   })
   if (!have_fit) {
-    # Synthesize using standard CANCER CPTs:
-    # Nodes: Pollution {low, high}, Smoker {no, yes}, Cancer {no, yes}, Xray {no, yes}, Dyspnoea {no, yes}
-    # Structure: P -> C, S -> C, C -> X, C -> D
     levYN <- c("no","yes")
     Pollution <- factor(sample(c("low","high"), n, replace = TRUE, prob = c(0.9, 0.1)))
     Smoker    <- factor(sample(levYN, n, replace = TRUE, prob = c(0.5, 0.5)))
     
-    # P(C=yes | P,S) — (classic textbook CPT; adjust if desired)
     pc <- mapply(function(p, s) {
       if (p == "low"  && s == "no")  0.03 else
         if (p == "low"  && s == "yes") 0.05 else
@@ -114,22 +107,17 @@ get_cancer_data <- function(n = 5000) {
 cancer_df <- get_cancer_data(n = 5000)
 str(cancer_df)   # sanity check: all factors
 
-# ---------- 3) Run HC with beta=0 and beta=0.01 ----------
 wrapper0  <- make_beta_wrapper(beta = 0.0,  alpha = 1)
 wrapper01 <- make_beta_wrapper(beta = 0.01, alpha = 1)
+wrapper02 <- make_beta_wrapper(beta = 0.00000001, alpha = 1)
 
 net0  <- hc(cancer_df, score = "custom-score", fun = wrapper0,  maxp = 2)
 net01 <- hc(cancer_df, score = "custom-score", fun = wrapper01, maxp = 2)
+net02 <- hc(cancer_df, score = "custom-score", fun = wrapper02, maxp = 2)
 
-par(mfrow = c(1,2))
+
 plot(net0,  main = "CANCER | beta = 0.0")
 plot(net01, main = "CANCER | beta = 0.01")
-par(mfrow = c(1,1))
+plot(net02, main = "CANCER | beta = 0.00000001")
 
-# ---------- 4) (Optional) Try a sweep of betas ----------
-betas <- c(0, 0.01, 0.05, 0.1, 0.3, 0.5)
-nets  <- lapply(betas, function(b) hc(cancer_df, score = "custom-score", fun = make_beta_wrapper(b)))
-names(nets) <- paste0("beta_", betas)
 
-# Example: print learned arcs for quick comparison
-lapply(nets, arcs)
