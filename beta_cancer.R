@@ -1,76 +1,136 @@
 library(bnlearn)
 set.seed(42)
 
-beta_div_score <- function(node, parents, data, beta = 0, alpha = 1.0, ...) {
+ensure_all_factors <- function(df) {
+  for (nm in names(df)) {
+    if (!is.factor(df[[nm]])) df[[nm]] <- factor(df[[nm]])
+  }
+  df
+}
+
+beta_div_limit_zero <- function(node, parents, data, alpha = 1.0) {
   stopifnot(is.character(node), length(node) == 1, node %in% names(data))
+  data <- ensure_all_factors(data)
+  if (length(parents) == 0) parents <- character(0)
+  
+  node_values <- levels(data[[node]])
+  n_values <- length(node_values)
+  total_score <- 0
+  
+  if (length(parents) == 0) {
+    for (t in seq_len(nrow(data))) {
+      obs <- data[[node]][t]
+      prior <- if (t == 1) setNames(rep(0, n_values), node_values)
+      else table(factor(data[[node]][1:(t-1)], levels = node_values))
+      y_bar <- sum(prior)
+      alpha_bar <- alpha * n_values
+      if (y_bar + alpha_bar > 0) {
+        p_vec <- (as.numeric(prior) + alpha) / (y_bar + alpha_bar)
+        names(p_vec) <- node_values
+        total_score <- total_score + log(p_vec[as.character(obs)])
+      }
+    }
+  } else {
+    parent_configs <- do.call(paste, c(data[parents], sep = "_"))
+    for (t in seq_len(nrow(data))) {
+      obs <- data[[node]][t]
+      config <- parent_configs[t]
+      if (t == 1) {
+        prior <- setNames(rep(0, n_values), node_values)
+      } else {
+        idx <- parent_configs[1:(t-1)] == config
+        if (any(idx)) prior <- table(factor(data[[node]][1:(t-1)][idx], levels = node_values))
+        else prior <- setNames(rep(0, n_values), node_values)
+      }
+      y_bar <- sum(prior)
+      alpha_bar <- alpha * n_values
+      if (y_bar + alpha_bar > 0) {
+        p_vec <- (as.numeric(prior) + alpha) / (y_bar + alpha_bar)
+        names(p_vec) <- node_values
+        total_score <- total_score + log(p_vec[as.character(obs)])
+      }
+    }
+  }
+  return(total_score)
+}
+
+
+beta_div_score <- function(node, parents, data, beta = 1.0, alpha = 1.0) {
+  stopifnot(is.character(node), length(node) == 1, node %in% names(data))
+  data <- ensure_all_factors(data)
   if (!is.factor(data[[node]])) data[[node]] <- factor(data[[node]])
   if (length(parents) == 0) parents <- character(0)
   
-  ll_dirichlet <- function(counts, alpha_vec) {
-    A <- sum(alpha_vec); N <- sum(counts)
-    lgamma(A) - lgamma(A + N) + sum(lgamma(alpha_vec + counts) - lgamma(alpha_vec))
+  if (beta == 0 || beta < 1e-4) {
+    return(beta_div_limit_zero(node, parents, data, alpha))
   }
   
-  if (isTRUE(all.equal(beta, 0))) {
-    if (length(parents) == 0) {
-      lev <- levels(data[[node]]); K <- length(lev)
-      alpha_vec <- rep(alpha / K, K)
-      tab <- table(data[[node]])
-      y <- setNames(rep(0L, K), lev); y[names(tab)] <- as.integer(tab)
-      return(ll_dirichlet(y, alpha_vec))
-    } else {
-      lev <- levels(data[[node]]); K <- length(lev)
-      alpha_vec <- rep(alpha / K, K)
-      f <- as.formula(paste("~", paste(c(parents, node), collapse = "+")))
-      ct <- xtabs(f, data = data)
-      margins <- seq_len(length(dim(ct)) - 1)
-      if (length(margins) == 0) {
-        y <- as.integer(ct)
-        return(ll_dirichlet(y, alpha_vec))
-      } else {
-        return(sum(apply(ct, margins, function(slice) {
-          y <- as.integer(slice)
-          ll_dirichlet(y, alpha_vec)
-        })))
+  node_values <- levels(data[[node]])
+  n_values <- length(node_values)
+  total_score <- 0
+  
+  if (length(parents) == 0) {
+    for (t in seq_len(nrow(data))) {
+      obs <- data[[node]][t]
+      prior <- if (t == 1) setNames(rep(0, n_values), node_values)
+      else table(factor(data[[node]][1:(t-1)], levels = node_values))
+      
+      y_j <- prior[obs]
+      y_bar <- sum(prior)
+      alpha_bar <- alpha * n_values
+      if (y_bar + alpha_bar > 0) {
+        p_j <- (y_j + alpha) / (y_bar + alpha_bar)
+        first_term <- (1 / beta) * (p_j^beta)
+        second_term <- sum(sapply(node_values, function(val) {
+          p_k <- (prior[val] + alpha) / (y_bar + alpha_bar)
+          p_k^(beta + 1)
+        })) / (beta + 1)
+        total_score <- total_score + (first_term - second_term)
+      }
+    }
+  } else {
+    parent_configs <- do.call(paste, c(data[parents], sep = "_"))
+    for (t in seq_len(nrow(data))) {
+      obs <- data[[node]][t]
+      config <- parent_configs[t]
+      prior <- if (t == 1) setNames(rep(0, n_values), node_values)
+      else {
+        idx <- parent_configs[1:(t-1)] == config
+        if (any(idx)) table(factor(data[[node]][1:(t-1)][idx], levels = node_values))
+        else setNames(rep(0, n_values), node_values)
+      }
+      y_j <- prior[obs]
+      y_bar <- sum(prior)
+      alpha_bar <- alpha * n_values
+      if (y_bar + alpha_bar > 0) {
+        p_j <- (y_j + alpha) / (y_bar + alpha_bar)
+        first_term <- (1 / beta) * (p_j^beta)
+        second_term <- sum(sapply(node_values, function(val) {
+          p_k <- (prior[val] + alpha) / (y_bar + alpha_bar)
+          p_k^(beta + 1)
+        })) / (beta + 1)
+        total_score <- total_score + (first_term - second_term)
       }
     }
   }
   
-  if (length(parents) == 0) {
-    lev <- levels(data[[node]]); K <- length(lev)
-    tab <- table(data[[node]])
-    y <- setNames(rep(0L, K), lev); y[names(tab)] <- as.integer(tab)
-    N <- sum(y)
-    p_hat <- (y + alpha / K) / (N + alpha)
-    return(sum(p_hat^beta)/beta - sum(p_hat^(beta+1))/(beta+1))
-  } else {
-    lev <- levels(data[[node]]); K <- length(lev)
-    f <- as.formula(paste("~", paste(c(parents, node), collapse = "+")))
-    ct <- xtabs(f, data = data)
-    margins <- seq_len(length(dim(ct)) - 1)
-    A <- alpha
-    return(sum(apply(ct, margins, function(slice) {
-      y <- as.integer(slice); N <- sum(y)
-      p_hat <- (y + A / K) / (N + A)
-      sum(p_hat^beta)/beta - sum(p_hat^(beta+1))/(beta+1)
-    })))
-  }
+  return(total_score)
 }
 
+# ---------- 2) Wrapper for hc ----------
 make_beta_wrapper <- function(beta, alpha = 1) {
   function(node, parents, data, args) {
     beta_div_score(node, parents, data, beta = beta, alpha = alpha)
   }
 }
 
+# ---------- 3) Get a CANCER dataset ----------
 get_cancer_data <- function(n = 5000) {
   have_fit <- FALSE
   suppressWarnings({
     if ("package:bnlearn" %in% search() || requireNamespace("bnlearn", quietly = TRUE)) {
-      # Some bnlearn builds export a bn.fit named 'cancer'
       if ("cancer" %in% data(package = "bnlearn")$results[, "Item"]) {
         data("cancer", package = "bnlearn")
-        # If loaded object is in env and is a bn.fit, we can sample from it:
         if (exists("cancer") && inherits(get("cancer"), "bn.fit")) {
           have_fit <- TRUE
           return(rbn(get("cancer"), n = n))
@@ -86,17 +146,12 @@ get_cancer_data <- function(n = 5000) {
     pc <- mapply(function(p, s) {
       if (p == "low"  && s == "no")  0.03 else
         if (p == "low"  && s == "yes") 0.05 else
-          if (p == "high" && s == "no")  0.10 else
-            0.20
+          if (p == "high" && s == "no")  0.10 else 0.20
     }, as.character(Pollution), as.character(Smoker))
     
     Cancer <- factor(ifelse(runif(n) < pc, "yes", "no"), levels = levYN)
-    
-    # Xray: P(X=yes | C): 0.9 if cancer, 0.2 otherwise
     px <- ifelse(Cancer == "yes", 0.9, 0.2)
     Xray <- factor(ifelse(runif(n) < px, "yes", "no"), levels = levYN)
-    
-    # Dyspnoea: P(D=yes | C): 0.65 if cancer, 0.30 otherwise
     pd <- ifelse(Cancer == "yes", 0.65, 0.30)
     Dyspnoea <- factor(ifelse(runif(n) < pd, "yes", "no"), levels = levYN)
     
@@ -104,20 +159,18 @@ get_cancer_data <- function(n = 5000) {
   }
 }
 
-cancer_df <- get_cancer_data(n = 5000)
-str(cancer_df)   # sanity check: all factors
+cancer_df <- ensure_all_factors(get_cancer_data(n = 5000))
+str(cancer_df)
 
-wrapper0  <- make_beta_wrapper(beta = 0.0,  alpha = 1)
-wrapper01 <- make_beta_wrapper(beta = 0.01, alpha = 1)
-wrapper02 <- make_beta_wrapper(beta = 0.00000001, alpha = 1)
+# ---------- 4) Run HC with beta=0, 0.9, 0.01 ----------
+wrapper0   <- make_beta_wrapper(beta = 0.0,  alpha = 1)
+wrapper09  <- make_beta_wrapper(beta = 0.9,  alpha = 1)
+wrapper001 <- make_beta_wrapper(beta = 0.01, alpha = 1)
 
-net0  <- hc(cancer_df, score = "custom-score", fun = wrapper0,  maxp = 2)
-net01 <- hc(cancer_df, score = "custom-score", fun = wrapper01, maxp = 2)
-net02 <- hc(cancer_df, score = "custom-score", fun = wrapper02, maxp = 2)
+net0   <- hc(cancer_df, score = "custom-score", fun = wrapper0,   maxp = 2)
+net09  <- hc(cancer_df, score = "custom-score", fun = wrapper09,  maxp = 2)
+net001 <- hc(cancer_df, score = "custom-score", fun = wrapper001, maxp = 2)
 
-
-plot(net0,  main = "CANCER | beta = 0.0")
-plot(net01, main = "CANCER | beta = 0.01")
-plot(net02, main = "CANCER | beta = 0.00000001")
-
-
+plot(net0,   main = "CANCER | beta = 0.0 (limit to KL)")
+plot(net09,  main = "CANCER | beta = 0.9")
+plot(net001, main = "CANCER | beta = 0.01")
